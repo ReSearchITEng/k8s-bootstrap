@@ -1,0 +1,168 @@
+---
+- hosts: k8s-global-group
+  become: true
+  become_user: root
+  tasks:
+    - name: install rsync
+      yum: name=rsync state=present
+    - name: install docker
+      yum: name=docker state=present
+    - name: enable docker service
+      service: name=docker enabled=yes state=started
+    - name: add kubernetes repository file
+      copy: src=kubernetes.repo dest=/etc/yum.repos.d/
+    - name: set necessary kernel parameter
+      copy: src=k8s_sysctl.conf dest=/etc/sysctl.d/k8s.conf
+    - name: apply kernel parameter
+      command: sysctl --system
+    - name: install k8s packages
+      yum: name=kubelet,kubeadm,kubectl,etcd state=present
+    - name: enable k8s services
+      service: name=kubelet enabled=yes state=stopped
+    - name: remove kubelet pki stuff
+      file: name=/var/lib/kubelet/pki state=absent
+    - name: stop firewalld and disable it
+      service: name=firewalld enabled=no state=stopped
+    - name: naughty selinux stopping us from using /var/lib/etcd ;)
+      command: setenforce 0
+    - name: etcd config file for systemd
+      template:
+        src: etcd.conf
+        dest: /etc/etcd/etcd.conf
+  #    - name: docker uses systemd cgroup driver on Centos, need to match that
+  #    template:
+  #      src: kubelet_systemd_conf
+  #      dest: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+    - name: replace kubedns ip
+      replace:
+        dest: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+        regexp: '10.96.0.10'
+        replace: '10.40.41.10'
+        backup: yes 
+    - name: reload systemd units
+      command: systemctl daemon-reload
+
+- hosts: k8s-masters
+  become: true
+  become_user: root
+  tasks:
+    - name: disable swap for now (should be done initially if possible. k8s needs that)
+      command: swapoff -a
+    - name: create yaml file directory
+      file: name=/root/k8s-bootstrap state=directory
+    - name: place kubeadm config somewhere nice
+      template: 
+          src: kubeadm_config.yaml
+          dest: /root/k8s-bootstrap
+    - name: create etcd pki directory
+      file: name=/etc/kubernetes/pki/etcd state=directory
+    - name: copy ca-csr.json to etcd pki directory
+      copy: src=ca-csr.json dest=/etc/kubernetes/pki/etcd/ca-csr.json
+    - name: copy ca-config.json to etcd pki directory
+      copy: src=ca-config.json dest=/etc/kubernetes/pki/etcd/ca-config.json
+    - name: copy client.json to etcd pki directory
+      copy: src=client.json dest=/etc/kubernetes/pki/etcd/client.json
+    - name: copy peer config.json to etcd dir
+      template: src=config.json dest=/etc/kubernetes/pki/etcd/config.json
+    - name: get cfssl
+      command: curl -o /usr/local/bin/cfssl https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
+      args:
+        creates: /usr/local/bin/cfssl
+    - name: get cfssljson
+      command: curl -o /usr/local/bin/cfssljson https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
+      args:
+        creates: /usr/local/bin/cfssljson
+    - name: make cfssl executable
+      command: chmod +x /usr/local/bin/cfssl
+    - name: make cfssljson executable
+      command: chmod +x /usr/local/bin/cfssljson
+
+
+
+- hosts: k8s-masters[0]
+  become: true
+  become_user: root
+  tasks:
+    # Note: "command:" doesn't work here, maybe cfssljson doesn't like it - didn't get deeper into this
+    - name: generate ca-certs
+      shell: /usr/local/bin/cfssl gencert -initca ca-csr.json | /usr/local/bin/cfssljson -bare ca -
+      args:
+        chdir: /etc/kubernetes/pki/etcd/
+        creates: /etc/kubernetes/pki/etcd/ca.pem
+    # Note: "command:" doesn't work here, maybe cfssljson doesn't like it - didn't get deeper into this, cfssl generates but fails with a warning...
+    - name: generate client certs
+      shell: /usr/local/bin/cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=client client.json | /usr/local/bin/cfssljson -bare client
+      ignore_errors: yes
+      args:
+        chdir: /etc/kubernetes/pki/etcd/
+        creates: /etc/kubernetes/pki/etcd/client.pem
+    - name: copy file from remote ca.pem
+      synchronize: src=/etc/kubernetes/pki/etcd/ca.pem dest=/tmp/etcpkifiles/ mode=pull
+    - name: copy file from remote ca-key.pem
+      synchronize: src=/etc/kubernetes/pki/etcd/ca-key.pem dest=/tmp/etcpkifiles/ mode=pull
+    - name: copy file from remote client.pem
+      synchronize: src=/etc/kubernetes/pki/etcd/client.pem dest=/tmp/etcpkifiles/ mode=pull
+    - name: copy file from remote client-key.pem
+      synchronize: src=/etc/kubernetes/pki/etcd/client-key.pem dest=/tmp/etcpkifiles/ mode=pull
+    - name: copy file from remote ca.pem
+      synchronize: src=/etc/kubernetes/pki/etcd/ca.pem dest=/tmp/etcpkifiles/ mode=pull
+
+    
+
+
+
+
+- hosts: k8s-masters[1],k8s-masters[2]
+  become: true
+  become_user: root
+  tasks:
+    - name: copy etcd pki files to other masters
+      synchronize: src=/tmp/etcpkifiles/ dest=/etc/kubernetes/pki/etcd/ mode=push
+    - name: copy peer config.json to etcd dir
+      template: src=config.json dest=/etc/kubernetes/pki/etcd/config.json
+
+
+- hosts: k8s-masters
+  become: true
+  become_user: root
+  tasks:
+    - name: generate more certs...
+      shell: /usr/local/bin/cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=server config.json | /usr/local/bin/cfssljson -bare server
+      ignore_errors: yes
+      args:
+        chdir: /etc/kubernetes/pki/etcd/
+        creates: /etc/kubernetes/pki/etcd/server.pem
+    - name: generate more certs...2
+      shell: /usr/local/bin/cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=peer config.json | /usr/local/bin/cfssljson -bare peer
+      ignore_errors: yes
+      args:
+        chdir: /etc/kubernetes/pki/etcd/
+        creates: /etc/kubernetes/pki/etcd/peer.pem
+    - name: make certs readable by etcd
+      file: name=/etc/kubernetes/pki/etcd owner=etcd group=etcd recurse=yes
+    - name: start etcd here
+      service: name=etcd state=started
+
+- hosts: k8s-masters[0]
+  become: true
+  become_user: root
+  tasks:
+    - name: stop kubelet for a moment...
+      service: name=kubelet state=stopped
+    - name: run kubeadm init
+      shell: kubeadm init --config k8s-bootstrap/kubeadm_config.yaml chdir=/root ignore_errors=yes 
+      async: 30
+      poll: 0
+      ignore_errors: yes
+    - name: copy file from remote ca.crt
+      synchronize: src=/etc/kubernetes/pki/ca.crt dest=/tmp/k8spkifiles/ mode=pull
+    - name: copy file from remote ca.key
+      synchronize: src=/etc/kubernetes/pki/ca.key dest=/tmp/k8spkifiles/ mode=pull
+
+- hosts: k8s-masters
+  become: true
+  become_user: root
+  tasks:
+   - name: copry k8s pki files to other masters
+     synchronize: src=/tmp/k8spkifiles/ dest=/etc/kubernetes/pki/ mode=push
+
