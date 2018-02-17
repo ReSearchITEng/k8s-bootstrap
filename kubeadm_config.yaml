@@ -1,0 +1,24 @@
+apiVersion: kubeadm.k8s.io/v1alpha1
+kind: MasterConfiguration
+api:
+  advertiseAddress: {{ ansible_default_ipv4.address }}
+networking:
+  serviceSubnet: 10.40.41.0/16
+  podSubnet: 10.41.42.0/16
+kubernetesVersion: 1.9.3
+nodeName: {{ ansible_fqdn }}
+etcd:
+  endpoints:
+  - https://{{ hostvars[groups['k8s-masters'][0]].ansible_default_ipv4.address }}:2379
+  - https://{{ hostvars[groups['k8s-masters'][1]].ansible_default_ipv4.address }}:2379
+  - https://{{ hostvars[groups['k8s-masters'][2]].ansible_default_ipv4.address }}:2379
+  caFile: /etc/kubernetes/pki/etcd/ca.pem
+  certFile: /etc/kubernetes/pki/etcd/client.pem
+  keyFile: /etc/kubernetes/pki/etcd/client-key.pem
+apiServerCertSANs:
+- "{{ hostvars[groups['k8s-masters'][0]].ansible_default_ipv4.address }}"
+- "{{ hostvars[groups['k8s-masters'][1]].ansible_default_ipv4.address }}"
+- "{{ hostvars[groups['k8s-masters'][2]].ansible_default_ipv4.address }}"
+- "127.0.0.1"
+apiServerExtraArgs:
+apiserver-count: 3
