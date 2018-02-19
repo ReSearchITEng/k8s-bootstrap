@@ -166,3 +166,15 @@
    - name: copry k8s pki files to other masters
      synchronize: src=/tmp/k8spkifiles/ dest=/etc/kubernetes/pki/ mode=push
 
+- hosts: k8s-masters[1],k8s-masters[2]
+  become: true
+  become_user: root
+  tasks:
+    - name: stop kubelet for a moment...
+      service: name=kubelet state=stopped
+    - name: run kubeadm init
+      shell: kubeadm init --config k8s-bootstrap/kubeadm_config.yaml chdir=/root ignore_errors=yes
+      async: 30
+      poll: 0
+      ignore_errors: yes
+ 
