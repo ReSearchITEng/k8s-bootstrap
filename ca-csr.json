@@ -1,0 +1,18 @@
+{
+    "hosts": [
+        "somesitehere"
+    ],
+    "key": {
+        "algo": "rsa",
+        "size": 2048
+    },
+    "names": [
+        {
+            "C":  "DE",
+            "L":  "Hamburg",
+            "O":  "Some really nice company",
+            "OU": "Admins",
+            "ST": "Hamburg"
+        }
+    ]
+}
