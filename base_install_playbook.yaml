@@ -61,7 +61,7 @@
     - name: copy peer config.json to etcd dir
       template: src=config.json dest=/etc/kubernetes/pki/etcd/config.json
     - name: place cfssl on machines
-      copy: src=cfssl dest=/usr/local/bin/cfssl mode=0644
+      copy: src=cfssl dest=/usr/local/bin/cfssl mode=0544
     - name: place cfssljson on machines
       copy: src=cfssl dest=/usr/local/bin/cfssljson mode=0644
 
