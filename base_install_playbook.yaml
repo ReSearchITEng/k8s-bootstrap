@@ -50,6 +50,15 @@
       template: 
           src: kubeadm_config.yaml
           dest: /root/k8s-bootstrap
+    - name: place calico.yaml somewhere nice
+      template:
+          src: calico.yaml
+          dest: /root/k8s-bootstrap
+    - name: place calico-rbac.yaml somewhere nice
+      template:
+          src: calico-rbac.yaml
+          dest: /root/k8s-bootstrap
+
     - name: create etcd pki directory
       file: name=/etc/kubernetes/pki/etcd state=directory
     - name: copy ca-csr.json to etcd pki directory
