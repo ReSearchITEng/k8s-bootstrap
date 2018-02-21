@@ -4,7 +4,7 @@
   become_user: root
   tasks:
     - name: install rsync, needed for ansible synchronize module
-      yum: name=rsync state=present
+      yum: name=rsync,unzip state=present
     - name: install docker
       yum: name=docker state=present
     - name: enable docker service
@@ -61,9 +61,9 @@
     - name: copy peer config.json to etcd dir
       template: src=config.json dest=/etc/kubernetes/pki/etcd/config.json
     - name: place cfssl on machines
-      copy: src=cfssl dest=/usr/local/bin/cfssl mode=0544
+      copy: src=cfssl.tar dest=/tmp
     - name: place cfssljson on machines
-      copy: src=cfssl dest=/usr/local/bin/cfssljson mode=0544
+      command: tar xfv /tmp/cfssl.tar -C /usr/local/bin/
 
 - hosts: k8s-masters[0]
   become: true
