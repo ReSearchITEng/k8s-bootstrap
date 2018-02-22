@@ -50,14 +50,6 @@
       template: 
           src: kubeadm_config.yaml
           dest: /root/k8s-bootstrap
-    - name: place calico.yaml somewhere nice
-      template:
-          src: calico.yaml
-          dest: /root/k8s-bootstrap
-    - name: place calico-rbac.yaml somewhere nice
-      template:
-          src: calico-rbac.yaml
-          dest: /root/k8s-bootstrap
 
     - name: create etcd pki directory
       file: name=/etc/kubernetes/pki/etcd state=directory
@@ -143,6 +135,8 @@
       async: 30
       poll: 0
       ignore_errors: yes
+      args:
+        creates: /etc/kubernetes/manifests/kube-apiserver.yaml
     - name: copy file from remote ca.crt
       synchronize: src=/etc/kubernetes/pki/ca.crt dest=/tmp/k8spkifiles/ mode=pull
     - name: copy file from remote ca.key
@@ -165,5 +159,38 @@
       shell: kubeadm init --config k8s-bootstrap/kubeadm_config.yaml chdir=/root ignore_errors=yes
       async: 30
       poll: 0
+      args:
+        creates: /etc/kubernetes/manifests/kube-apiserver.yaml
       ignore_errors: yes
- 
+
+- hosts: k8s-masters[0] 
+  become: true
+  become_user: root
+  tasks:
+    - name: create base64 encoded version of etcd client-key.pem for usage in calico.yaml template
+      shell: cat /etc/kubernetes/pki/etcd/client-key.pem | base64 -w 0
+      register: calico_etcd_client_key_output
+    - name: create base64 encoded version of etcd client.pem for usage in calico.yaml template
+      shell: cat /etc/kubernetes/pki/etcd/client.pem | base64 -w 0
+      register: calico_etcd_client_pem_output
+    - name: create base64 encoded version of etcd ca.pem for usage in calico.yaml template
+      shell: cat /etc/kubernetes/pki/etcd/ca.pem | base64 -w 0
+      register: calico_etcd_ca_pem_output
+    - name: place calico.yaml somewhere nice
+      template:
+        src: calico.yaml
+        dest: /root/k8s-bootstrap
+    - name: place calico-rbac.yaml somewhere nice
+      template:
+        src: calico-rbac.yaml
+        dest: /root/k8s-bootstrap
+    - name: wait until all masters are up, then apply kube-proxy via kubeadm (tried this out, only works if all master are up)
+      shell: kubectl --kubeconfig /etc/kubernetes/admin.conf get pods -n kube-system | grep apiserver | wc -l
+      register: task_result
+      until: task_result.stdout == "3"
+      retries: 90
+      delay: 3
+      ignore_errors: yes
+    - name: start kube-proxy, it's an alpha addon in kubeadm 1.9
+      command: kubeadm alpha phase addon kube-proxy
+
