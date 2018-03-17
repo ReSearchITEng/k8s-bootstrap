@@ -9,6 +9,10 @@
       yum: name=docker state=present
     - name: enable docker service
       service: name=docker enabled=yes state=started
+    - name: enable docker systemd memory accounting
+      command: systemctl set-property docker.service MemoryAccounting=yes
+    - name: enable docker systemd cpu accounting
+      command: systemctl set-property docker.service CPUAccounting=yes
     - name: add kubernetes repository file
       copy: src=kubernetes.repo dest=/etc/yum.repos.d/
     - name: set necessary kernel parameter
@@ -42,6 +46,10 @@
   become: true
   become_user: root
   tasks:
+    - lineinfile:
+        name: /etc/fstab
+        state: absent
+        regexp: 'swap'
     - name: disable swap for now (should be done initially if possible. k8s needs that)
       command: swapoff -a
     - name: create yaml file directory
@@ -141,6 +149,11 @@
       synchronize: src=/etc/kubernetes/pki/ca.crt dest=/tmp/k8spkifiles/ mode=pull
     - name: copy file from remote ca.key
       synchronize: src=/etc/kubernetes/pki/ca.key dest=/tmp/k8spkifiles/ mode=pull
+    - name: copy file from remote sa.key
+      synchronize: src=/etc/kubernetes/pki/sa.key dest=/tmp/k8spkifiles/ mode=pull
+    - name: copy file from remote sa.pub
+      synchronize: src=/etc/kubernetes/pki/sa.pub dest=/tmp/k8spkifiles/ mode=pull
+
 
 - hosts: k8s-masters
   become: true
@@ -193,4 +206,6 @@
       ignore_errors: yes
     - name: start kube-proxy, it's an alpha addon in kubeadm 1.9
       command: kubeadm alpha phase addon kube-proxy
+    - name: Deploy cni (calico)
+      command: kubectl create --kubeconfig=/etc/kubernetes/admin.conf -f /root/k8s-bootstrap/calico-rbac.yaml -f /root/k8s-bootstrap/calico.yaml
 
