@@ -188,7 +188,7 @@
       shell: kubectl --kubeconfig /etc/kubernetes/admin.conf get pods -n kube-system | grep apiserver | wc -l
       register: task_result
       until: task_result.stdout == "3"
-      retries: 90
+      retries: 120
       delay: 3
       ignore_errors: yes
     - name: start kube-proxy, it's an alpha addon in kubeadm 1.9
