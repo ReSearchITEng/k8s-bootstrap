@@ -26,4 +26,4 @@ apiServerCertSANs:
 - "{{ hostvars[groups['k8s-masters'][2]].ansible_default_ipv4.address }}"
 - "127.0.0.1"
 apiServerExtraArgs:
-apiserver-count: 3
+  apiserver-count: "3"
