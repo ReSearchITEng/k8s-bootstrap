@@ -27,8 +27,13 @@
       file: name=/var/lib/kubelet/pki state=absent
     - name: stop firewalld and disable it
       service: name=firewalld enabled=no state=stopped
-    - name: naughty selinux stopping us from using /var/lib/etcd ;)
+    - name: naughty selinux stopping us from using /var/lib/etcd, calico install-cni stops too
       command: setenforce 0
+    - name: disable selinux permanently
+      replace:
+        dest: /etc/selinux/config
+        regexp: 'SELINUX=enforcing'
+        replace: 'SELINUX=disabled'
     - name: etcd config file for systemd
       template:
         src: etcd.conf
@@ -38,7 +43,7 @@
         dest: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
         regexp: '10.96.0.10'
         replace: '10.40.41.10'
-        backup: yes 
+        backup: yes
     - name: reload systemd units
       command: systemctl daemon-reload
 
@@ -55,7 +60,7 @@
     - name: create yaml file directory
       file: name=/root/k8s-bootstrap state=directory
     - name: place kubeadm config somewhere nice
-      template: 
+      template:
           src: kubeadm_config.yaml
           dest: /root/k8s-bootstrap
 
@@ -139,7 +144,7 @@
     - name: stop kubelet for a moment...so kubeadm can start it :)
       service: name=kubelet state=stopped
     - name: run kubeadm init - yes, we need to wait here, otherwise kubeadm will NOT create the cluster-info configmap in kube-public namespace
-      shell: kubeadm init --config k8s-bootstrap/kubeadm_config.yaml chdir=/root ignore_errors=yes 
+      shell: kubeadm init --config k8s-bootstrap/kubeadm_config.yaml chdir=/root ignore_errors=yes
       #async: 30
       #poll: 0
       ignore_errors: yes
@@ -178,7 +183,7 @@
         creates: /etc/kubernetes/manifests/kube-apiserver.yaml
       ignore_errors: yes
 
-- hosts: k8s-masters[0] 
+- hosts: k8s-masters[0]
   become: true
   become_user: root
   tasks:
@@ -213,4 +218,3 @@
       command: kubeadm alpha phase addon kube-proxy
     - name: Deploy cni (calico)
       command: kubectl create --kubeconfig=/etc/kubernetes/admin.conf -f /root/k8s-bootstrap/calico-rbac.yaml -f /root/k8s-bootstrap/calico.yaml
-
