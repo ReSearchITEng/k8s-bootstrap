@@ -28,4 +28,9 @@ quay.io/calico/kube-controllers:v2.0.0
 
 Currently Internet access is necessary, this will be changed in the next versions.
 
+Further project plans:
+- All necessary components should run on at least once per master node
+- Add some optioning for bootstrapping
+- LDAP Auth :)
+
 
